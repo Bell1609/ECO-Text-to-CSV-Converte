@@ -1,14 +1,15 @@
 import streamlit as st
-import pandas as pd
 import re
+import csv
+import io
 
 st.set_page_config(
-    page_title="ECO TEXT → CSV",
+    page_title="ECO TEXT → CSV (Streaming Mode)",
     page_icon="📄",
     layout="wide"
 )
 
-st.title("📄 ECO TEXT → CSV")
+st.title("📄 ECO TEXT → CSV (Memory Safe Streaming)")
 
 uploaded_files = st.file_uploader(
     "Upload ECO TXT File(s)",
@@ -16,7 +17,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-all_rows = []
+PREVIEW_LIMIT = 500
 
 
 # =========================================================
@@ -24,36 +25,33 @@ all_rows = []
 # =========================================================
 def split_eco_blocks(text):
     blocks = re.split(r'\n\s*Number:\s*', text)
-    result = []
-
-    for b in blocks:
-        if not b.strip():
-            continue
-        result.append("Number: " + b)
-
-    return result
+    return ["Number: " + b for b in blocks if b.strip()]
 
 
 # =========================================================
-# 2️⃣ PARSE ECO HEADER (FULL)
+# 2️⃣ SAFE REGEX FIND
+# =========================================================
+def find(pattern, text):
+    m = re.search(pattern, text, re.S)
+    return m.group(1).strip() if m else ""
+
+
+# =========================================================
+# 3️⃣ PARSE ECO HEADER
 # =========================================================
 def parse_eco_header(block):
 
-    def find(pattern):
-        m = re.search(pattern, block, re.S)
-        return m.group(1).strip() if m else ""
-
     eco = {}
 
-    eco["ecoNumber"] = find(r'Number:\s*(\S+)')
-    eco["createdDate"] = find(r'Created Date:\s*([0-9A-Z\-]+)')
-    eco["type"] = find(r'Type:\s*(.*?)\s+CCDR')
-    eco["status"] = find(r'Status:\s*(.*?)\s+Ver Test')
-    eco["reason"] = find(r'Reason:\s*(.*?)\s+QA Group')
-    eco["priority"] = find(r'Priority:\s*(.*?)\s+KEY COMPONENT')
-    eco["requestor"] = find(r'Requestor:\s*(.*?)\s+ECO Effec')
-    eco["ecoDepartment"] = find(r'ECO Department:\s*(.*)')
-    eco["approveStatus"] = find(r'Approve Status:\s*(.*)')
+    eco["ecoNumber"] = find(r'Number:\s*(\S+)', block)
+    eco["createdDate"] = find(r'Created Date:\s*([0-9A-Z\-]+)', block)
+    eco["type"] = find(r'Type:\s*(.*?)\s+CCDR', block)
+    eco["status"] = find(r'Status:\s*(.*?)\s+Ver Test', block)
+    eco["reason"] = find(r'Reason:\s*(.*?)\s+QA Group', block)
+    eco["priority"] = find(r'Priority:\s*(.*?)\s+KEY COMPONENT', block)
+    eco["requestor"] = find(r'Requestor:\s*(.*?)\s+ECO Effec', block)
+    eco["ecoDepartment"] = find(r'ECO Department:\s*(.*)', block)
+    eco["approveStatus"] = find(r'Approve Status:\s*(.*)', block)
 
     desc_match = re.search(
         r'ECO DESCRIPTION:(.*?)(Store &|Outstand PO|Vendor WIP|Prod WIP|Final Ass|FG &)',
@@ -65,53 +63,15 @@ def parse_eco_header(block):
     if desc_match:
         eco["description"] = re.sub(r'\s+', ' ', desc_match.group(1)).strip()
 
-    eco["revisedItems"] = []
-
     return eco
 
 
 # =========================================================
-# 3️⃣ SPLIT ITEM BLOCKS
-# =========================================================
-def split_revised_items(block):
-    parts = re.split(r'\n\s*Revised Items', block)
-    return [p for p in parts if "Item:" in p]
-
-
-# =========================================================
-# 4️⃣ PARSE ITEM HEADER (FULL)
-# =========================================================
-def parse_item_block(item_block):
-
-    def find(pattern):
-        m = re.search(pattern, item_block, re.S)
-        return m.group(1).strip() if m else ""
-
-    item = {}
-
-    item["item"] = find(r'Item:\s*(\S+)')
-    item["itemDescription"] = find(r'Item:\s*\S+\s+(.*?)\s+Buyer:')
-    item["upLevelItem"] = find(r'Up Level Item:\s*(.*?)\s+Cur Rev')
-    item["topModel"] = find(r'Top Model:\s*(.*?)\s+New Rev')
-    item["effectiveDate"] = find(r'Effective Date:\s*([0-9A-Z\-]+)')
-    item["itemStatus"] = find(r'Status:\s*(.*?)\s+Use Up')
-    item["itemType"] = find(r'Item Type:\s*(.*?)\s+Update WIP')
-    item["updateWIP"] = find(r'Update WIP:\s*(\S+)')
-    item["mrpActive"] = find(r'MRP Active:\s*(\S+)')
-
-    item["components"] = parse_components(item_block)
-
-    return item
-
-
-# =========================================================
-# 5️⃣ PARSE COMPONENT TABLE (ALL COLUMNS)
+# 4️⃣ PARSE COMPONENT TABLE
 # =========================================================
 def parse_components(item_block):
 
-    components = []
     lines = item_block.splitlines()
-
     capture = False
     current = None
 
@@ -127,34 +87,38 @@ def parse_components(item_block):
         if re.match(r'\s*(Add|Disabl)', line):
 
             current = {
-                "action": line[0:7].strip(),
-                "componentItem": line[7:18].strip(),
-                "description": line[18:59].strip(),
-                "quantity": line[59:68].strip(),
-                "uom": line[68:72].strip(),
-                "seq": line[72:77].strip(),
-                "disableDate": line[77:88].strip(),
-                "itemType": line[88:94].strip(),
-                "supplyType": line[94:106].strip(),
-                "makeBuy": line[106:116].strip(),
-                "buyer": line[116:132].strip(),
-                "cost": line[132:140].strip(),
-                "comments": line[140:].strip()
+                "Action": line[0:7].strip(),
+                "Component Item": line[7:18].strip(),
+                "Component Description": line[18:59].strip(),
+                "Quantity": line[59:68].strip(),
+                "UOM": line[68:72].strip(),
+                "Seq": line[72:77].strip(),
+                "Disable Date": line[77:88].strip(),
+                "Component Item Type": line[88:94].strip(),
+                "Supply Type": line[94:106].strip(),
+                "Make/Buy": line[106:116].strip(),
+                "Buyer": line[116:132].strip(),
+                "Cost": line[132:140].strip(),
+                "Comments": line[140:].strip()
             }
 
-            components.append(current)
+            yield current
 
         else:
             if current and line.strip():
-                current["description"] += " " + line.strip()
-
-    return components
+                current["Component Description"] += " " + line.strip()
 
 
 # =========================================================
-# MAIN
+# MAIN PROCESS (STREAMING)
 # =========================================================
 if uploaded_files:
+
+    output = io.StringIO()
+    writer = None
+
+    preview_rows = []
+    total_rows = 0
 
     for uploaded_file in uploaded_files:
 
@@ -164,77 +128,67 @@ if uploaded_files:
         for block in eco_blocks:
 
             eco = parse_eco_header(block)
-            item_blocks = split_revised_items(block)
+
+            item_blocks = re.split(r'\n\s*Revised Items', block)
 
             for item_block in item_blocks:
 
-                item = parse_item_block(item_block)
-                eco["revisedItems"].append(item)
+                if "Item:" not in item_block:
+                    continue
 
-            # ---------------- FLATTEN ----------------
-            for item in eco["revisedItems"]:
-                if item["components"]:
-                    for comp in item["components"]:
+                item_code = find(r'Item:\s*(\S+)', item_block)
+                item_desc = find(r'Item:\s*\S+\s+(.*?)\s+Buyer:', item_block)
+                effective_date = find(r'Effective Date:\s*([0-9A-Z\-]+)', item_block)
 
-                        row = {
-                            # ECO LEVEL
-                            "ECO Number": eco["ecoNumber"],
-                            "Created Date": eco["createdDate"],
-                            "Type": eco["type"],
-                            "Status": eco["status"],
-                            "Reason": eco["reason"],
-                            "Priority": eco["priority"],
-                            "Requestor": eco["requestor"],
-                            "Department": eco["ecoDepartment"],
-                            "Approve Status": eco["approveStatus"],
-                            "ECO Description": eco["description"],
+                for comp in parse_components(item_block):
 
-                            # ITEM LEVEL
-                            "Revised Item": item["item"],
-                            "Item Description": item["itemDescription"],
-                            "Up Level Item": item["upLevelItem"],
-                            "Top Model": item["topModel"],
-                            "Effective Date": item["effectiveDate"],
-                            "Item Status": item["itemStatus"],
-                            "Item Type": item["itemType"],
-                            "Update WIP": item["updateWIP"],
-                            "MRP Active": item["mrpActive"],
-
-                            # COMPONENT LEVEL
-                            "Action": comp["action"],
-                            "Component Item": comp["componentItem"],
-                            "Component Description": comp["description"],
-                            "Quantity": comp["quantity"],
-                            "UOM": comp["uom"],
-                            "Seq": comp["seq"],
-                            "Disable Date": comp["disableDate"],
-                            "Component Item Type": comp["itemType"],
-                            "Supply Type": comp["supplyType"],
-                            "Make/Buy": comp["makeBuy"],
-                            "Buyer": comp["buyer"],
-                            "Cost": comp["cost"],
-                            "Comments": comp["comments"]
-                        }
-
-                        all_rows.append(row)
-
-                else:
-                    all_rows.append({
+                    row = {
+                        # ECO
                         "ECO Number": eco["ecoNumber"],
-                        "Revised Item": item["item"]
-                    })
+                        "Created Date": eco["createdDate"],
+                        "Status": eco["status"],
+                        "Reason": eco["reason"],
+                        "Priority": eco["priority"],
+                        "Requestor": eco["requestor"],
+                        "Department": eco["ecoDepartment"],
+                        "Approve Status": eco["approveStatus"],
+                        "ECO Description": eco["description"],
 
-    if all_rows:
-        df = pd.DataFrame(all_rows)
-        st.success(f"Flatten completed: {len(df)} rows")
-        st.dataframe(df, use_container_width=True)
+                        # ITEM
+                        "Revised Item": item_code,
+                        "Item Description": item_desc,
+                        "Effective Date": effective_date,
 
-        csv = df.to_csv(index=False).encode("utf-8")
+                        # COMPONENT
+                        **comp
+                    }
+
+                    if writer is None:
+                        writer = csv.DictWriter(output, fieldnames=row.keys())
+                        writer.writeheader()
+
+                    writer.writerow(row)
+
+                    if len(preview_rows) < PREVIEW_LIMIT:
+                        preview_rows.append(row)
+
+                    total_rows += 1
+
+    if total_rows > 0:
+
+        st.success(f"✅ Processed {total_rows:,} rows")
+
+        if preview_rows:
+            import pandas as pd
+            st.warning(f"Showing first {len(preview_rows)} rows only")
+            st.dataframe(pd.DataFrame(preview_rows), use_container_width=True)
+
         st.download_button(
-            "⬇ Download CSV",
-            csv,
-            "eco_enterprise_output.csv",
+            "⬇ Download Full CSV",
+            output.getvalue().encode("utf-8"),
+            "eco_streaming_output.csv",
             "text/csv"
         )
+
     else:
         st.warning("No ECO detected.")
