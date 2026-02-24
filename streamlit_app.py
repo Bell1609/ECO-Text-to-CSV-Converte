@@ -50,8 +50,7 @@ def parse_eco_header(block):
     eco["reason"] = find(r'Reason:\s*(.*?)\s+QA Group', block)
     eco["priority"] = find(r'Priority:\s*(.*?)\s+KEY COMPONENT', block)
     eco["requestor"] = find(r'Requestor:\s*(.*?)\s+ECO Effec', block)
-    eco["ecoDepartment"] = find(r'ECO Department:\s*(.*)', block)
-    eco["approveStatus"] = find(r'Approve Status:\s*(.*)', block)
+    eco["ecoDepartment"] = find(r'ECO Department:\s*(\S+)', block)
 
     desc_match = re.search(
         r'ECO DESCRIPTION:(.*?)(Store &|Outstand PO|Vendor WIP|Prod WIP|Final Ass|FG &)',
@@ -151,7 +150,6 @@ if uploaded_files:
                         "Priority": eco["priority"],
                         "Requestor": eco["requestor"],
                         "Department": eco["ecoDepartment"],
-                        "Approve Status": eco["approveStatus"],
                         "ECO Description": eco["description"],
 
                         # ITEM
