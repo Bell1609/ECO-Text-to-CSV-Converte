@@ -85,6 +85,27 @@ def parse_components(item_block):
 
         if re.match(r'\s*(Add|Disabl)', line):
 
+            tail = line[116:].strip()
+            buyer = ""
+            cost = ""
+            comments = ""
+
+            if tail:
+                parts = tail.split()
+
+                cost_index = None
+                for i, token in enumerate(parts):
+                    if re.fullmatch(r'-?\d+(?:,\d{3})*(?:\.\d+)?', token):
+                        cost_index = i
+                        break
+
+                if cost_index is not None:
+                    buyer = " ".join(parts[:cost_index]).strip()
+                    cost = parts[cost_index].strip()
+                    comments = " ".join(parts[cost_index + 1:]).strip()
+                else:
+                    buyer = tail
+
             current = {
                 "Action": line[0:7].strip(),
                 "Component Item": line[7:18].strip(),
@@ -96,9 +117,9 @@ def parse_components(item_block):
                 "Component Item Type": line[88:94].strip(),
                 "Supply Type": line[94:106].strip(),
                 "Make/Buy": line[106:116].strip(),
-                "Buyer": line[116:132].strip(),
-                "Cost": line[132:140].strip(),
-                "Comments": line[140:].strip()
+                "Buyer": buyer,
+                "Cost": cost,
+                "Comments": comments
             }
 
             yield current
