@@ -17,7 +17,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-PREVIEW_LIMIT = 500
+PREVIEW_LIMIT = 100
 
 
 # =========================================================
