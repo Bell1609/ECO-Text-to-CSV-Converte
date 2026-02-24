@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📄 ECO TEXT → CSV (Memory Safe Streaming)")
+st.title("📄 ECO TEXT → CSV (Done fix 25/02)")
 
 uploaded_files = st.file_uploader(
     "Upload ECO TXT File(s)",
