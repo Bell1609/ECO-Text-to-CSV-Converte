@@ -3,12 +3,12 @@ import pandas as pd
 import re
 
 st.set_page_config(
-    page_title="ECO TEXT → CSV (Enterprise Full Parser)",
+    page_title="ECO TEXT → CSV",
     page_icon="📄",
     layout="wide"
 )
 
-st.title("📄 ECO TEXT → CSV (Enterprise Full Parser)")
+st.title("📄 ECO TEXT → CSV")
 
 uploaded_files = st.file_uploader(
     "Upload ECO TXT File(s)",
