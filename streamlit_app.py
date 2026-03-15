@@ -9,10 +9,10 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📄 ECO TEXT → CSV (Done fix 25/02)")
+st.title("📄 ECO TEXT → CSV")
 
 uploaded_files = st.file_uploader(
-    "Upload ECO TXT File(s)",
+    "Upload one or multiple ECO TXT File(s) ",
     type=["txt"],
     accept_multiple_files=True
 )
